@@ -1,0 +1,44 @@
+# ---------- Python ----------
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---------- Node / Next.js ----------
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+
+# ---------- Env / secrets ----------
+.env
+.env.local
+.env.*.local
+
+# ---------- IDE ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---------- Data / storage ----------
+var/private-storage/*
+!var/private-storage/.gitkeep
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+
+# ---------- Logs ----------
+*.log
+/tmp/
+
+# ---------- Test uploads (temporary) ----------
+/tmp/*.xlsx
+/tmp/*.csv

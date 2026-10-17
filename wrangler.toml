@@ -1,0 +1,25 @@
+# Cloudflare Pages deployment config
+# 
+# Option A — Cloudflare builds for you (recommended):
+#   wrangler pages project create office-lease
+#   wrangler pages deploy --project-name=office-lease
+#   → Then set in Pages Dashboard:
+#       Framework preset: Next.js
+#       Build command: npm run build
+#       Build output directory: .next
+
+# Option B — Build locally, deploy .next (cache must be cleaned first):
+#   rm -rf apps/web/.next/dev/cache apps/web/.next/cache
+#   wrangler pages deploy apps/web/.next --project-name=office-lease
+
+name = "office-lease"
+compatibility_date = "2026-10-15"
+pages_build_output_dir = "apps/web/.next"
+
+# Environment variables (set in Cloudflare Dashboard → Pages → Settings → Environment variables):
+#   NEXT_PUBLIC_API_BASE_URL=https://your-backend.up.railway.app
+#   DATABASE_URL=...
+#   JWT_SECRET_KEY=...
+#   LLM_PROVIDER=nvidia
+#   LLM_API_KEY=...
+#   LLM_MODEL=openai/gpt-oss-20b
