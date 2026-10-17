@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 import httpx
 
@@ -162,6 +162,112 @@ def chat(
             raise LLMError(f"LLM 网络错误") from exc
 
     raise LLMError(f"LLM 请求失败 (重试3次后仍不可用)") from last_exc
+
+
+def chat_stream(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float = 0.2,
+    max_tokens: int = 2048,
+    business_context: Optional[dict[str, Any]] = None,
+) -> Iterator[str]:
+    """Streaming chat. Yields incremental text chunks as they arrive.
+
+    Uses server-sent events from the OpenAI-compatible endpoint. Each yielded
+    string is a content delta (already stripped). Empty chunks are skipped.
+    Raises LLMError on configuration / network / parse failures so the caller
+    can fall back to non-streaming or rule-based summary.
+
+    Reasoning models (e.g. NVIDIA gpt-oss) stream reasoning_content deltas too;
+    we yield them so users see the thinking process in real time, marked as
+    a separate stream segment by the caller. Content and reasoning_content
+    may interleave per chunk; the renderer can split them by event type.
+    """
+    if not is_configured():
+        raise LLMError("LLM 未配置")
+
+    system = _build_system_prompt(business_context or {})
+
+    payload = {
+        "model": settings.llm_model,
+        "messages": [{"role": "system", "content": system}, *messages],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.llm_api_key}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+
+    url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+    timeout = httpx.Timeout(settings.llm_timeout_seconds, connect=10)
+
+    with httpx.Client(timeout=timeout) as client:
+        with client.stream("POST", url, json=payload, headers=headers) as resp:
+            if resp.status_code != 200:
+                # Read a small prefix of the body for diagnostics and surface a sanitised error.
+                detail = ""
+                try:
+                    # Read up to 4KB for error message
+                    raw = b""
+                    for chunk in resp.iter_bytes():
+                        raw += chunk
+                        if len(raw) > 4096:
+                            break
+                    try:
+                        detail = json.loads(raw.decode("utf-8", errors="ignore")).get("error", {}).get("message", "")
+                    except Exception:
+                        detail = raw[:200].decode("utf-8", errors="ignore")
+                except Exception:
+                    detail = ""
+                if resp.status_code == 401:
+                    raise LLMError("LLM 认证失败 (API Key 无效)")
+                if resp.status_code == 404:
+                    raise LLMError("LLM 端点未找到 (检查 base_url 或 model)")
+                raise LLMError(f"LLM 返回 HTTP {resp.status_code}" + (f": {detail[:120]}" if detail else ""))
+
+            # Parse SSE: each line "data: {...}", and a final "data: [DONE]"
+            saw_any_chunk = False
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                if line.startswith("data:"):
+                    payload_str = line[5:].strip()
+                    if payload_str == "[DONE]":
+                        break
+                    try:
+                        evt = json.loads(payload_str)
+                    except json.JSONDecodeError:
+                        continue
+                    try:
+                        choice = evt["choices"][0]
+                    except (KeyError, IndexError):
+                        continue
+                    delta = choice.get("delta") or {}
+                    content = delta.get("content")
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                    emitted = False
+                    if content:
+                        text = content.strip()
+                        if text:
+                            saw_any_chunk = True
+                            yield f"[content]{text}"
+                            emitted = True
+                    if reasoning:
+                        text = reasoning.strip()
+                        if text:
+                            saw_any_chunk = True
+                            yield f"[reasoning]{text}"
+                            emitted = True
+                    if not emitted:
+                        # Some models send role=fetch or finish_reason; ignore silently
+                        pass
+
+            if not saw_any_chunk:
+                raise LLMError("LLM 流式返回空内容")
 
 
 def summarize_tool_result(tool_name: str, tool_data: dict[str, Any], user_query: str) -> str:

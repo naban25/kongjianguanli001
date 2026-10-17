@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
@@ -752,3 +753,309 @@ def send_message(conv_id: str, payload: SendMessage, req: Request, db: Session =
         "export_available": True,
         "source": f"project:{conv.project_id}",
     }
+
+
+# ---------- Streaming (SSE) ----------
+
+# SSE event protocol:
+#   event: meta             data: {"tool": "...", "row_count": N?, "range": {...}?}
+#   event: summary_delta   data: {"text": "..."}     (LLM final summary chunk)
+#   event: reasoning_delta data: {"text": "..."}     (LLM thinking chunk, optional)
+#   event: done             data: {"message_id": "...", "summary": "...",
+#                                  "tool": "...", "latency_ms": N,
+#                                  "llm_polished": bool, "row_count": N?,
+#                                  "warnings": [...], "metric_definitions": {...}}
+#   event: error            data: {"message": "..."}
+#
+# Frontend consumes via ReadableStream and EventSource-style parser; each event
+# arrives as a JSON object so the page can render deltas in real time.
+
+def _sse(event: str, data: dict | str) -> bytes:
+    """Encode one SSE frame as bytes (UTF-8).
+
+    `event` is the SSE event name. `data` is either a dict (serialised) or a
+    pre-formatted string (must already be valid JSON).
+    """
+    if isinstance(data, dict):
+        payload = json.dumps(data, ensure_ascii=False, default=str)
+    else:
+        payload = data
+    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+def _safe_truncate(s: str, n: int = 3000) -> str:
+    if len(s) <= n:
+        return s
+    return s[:n] + "…(截断)"
+
+
+def _stream_summarize_tool_result(
+    tool_name: str,
+    data: dict,
+    user_query: str,
+) -> tuple[Iterator[tuple[str, str]], bool]:
+    """Stream the LLM summary of a tool result.
+
+    Returns (iterator_of_(kind, text)_tuples, llm_was_used_flag).
+    `kind` is "content" or "reasoning".
+    Falls back to a single rule-based chunk if LLM is unavailable.
+    """
+    if _llm_ok and llm_provider and llm_provider.is_configured():
+        # Build a streaming chat call mirroring summarize_tool_result
+        try:
+            safe_data = json.dumps(data, ensure_ascii=False)
+            safe_data = _safe_truncate(safe_data, 3000)
+            messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        f"用户原查询：{user_query}\n\n"
+                        f"工具：{tool_name}\n"
+                        f"工具返回（JSON）：{safe_data}\n\n"
+                        "请用中文写一段简洁的业务总结（2-4 句），突出关键数字和结论。"
+                        "如果数据为空也要如实说明。"
+                    ),
+                },
+            ]
+
+            def _wrapped() -> Iterator[tuple[str, str]]:
+                for raw in llm_provider.chat_stream(messages, temperature=0.2, max_tokens=1024):
+                    if raw.startswith("[content]"):
+                        yield ("content", raw[len("[content]"):])
+                    elif raw.startswith("[reasoning]"):
+                        yield ("reasoning", raw[len("[reasoning]"):])
+
+            return _wrapped(), True
+        except Exception:
+            pass
+
+    # Fallback single-chunk summary
+    fallback_text = _rule_based_summary(tool_name, data)
+
+    def _fallback() -> Iterator[tuple[str, str]]:
+        yield ("content", fallback_text)
+
+    return _fallback(), False
+
+
+def _rule_based_summary(tool_name: str, data: dict) -> str:
+    """Mirror summarise_tool_result fallback branch — pure rule-based, no LLM."""
+    if tool_name == "get_due_leases":
+        return f"未来到期合同共 {data.get('row_count', 0)} 份。"
+    if tool_name == "get_overdue_charges":
+        return f"当前逾期费用共 {data.get('row_count', 0)} 笔。"
+    if tool_name == "get_business_metrics":
+        o = data.get("occupancy", {})
+        return (
+            f"数量出租率 {o.get('space_count_occupancy', {}).get('ratio_pct', 'N/A')}%、"
+            f"面积出租率 {o.get('area_occupancy', {}).get('ratio_pct', 'N/A')}%、"
+            f"活跃租约 {o.get('active_lease_count', 'N/A')} 份。"
+        )
+    return f"工具 {tool_name} 返回数据。"
+
+
+@router.post("/conversations/{conv_id}/stream")
+def send_message_stream(
+    conv_id: str,
+    payload: SendMessage,
+    req: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(CurrentUser()),
+) -> StreamingResponse:
+    """Streaming variant: Server-Sent Events (text/event-stream).
+
+    Performs full intent routing + tool call up front (sync), then streams the
+    natural-language summary as it arrives from the LLM. Falls back to a
+    single rule-based summary chunk when LLM is unavailable. Persists user +
+    assistant messages and tool run + audit log on completion.
+    """
+    try:
+        cid = uuid.UUID(conv_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="无效的会话 ID。")
+
+    conv = db.query(AIConversation).filter(AIConversation.id == cid).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会话不存在。")
+    if conv.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权访问此会话。")
+    if not require_project_scope(str(conv.project_id), user, db):
+        raise HTTPException(status_code=403, detail="无权访问此项目。")
+
+    # Persist user message immediately (so a network drop still keeps history)
+    user_msg = AIMessage(
+        id=uuid.uuid4(),
+        conversation_id=cid,
+        role="user",
+        content=payload.content,
+    )
+    db.add(user_msg)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="用户消息持久化失败")
+
+    # Intent routing — compute structured data + tool name up front
+    start = datetime.now(timezone.utc)
+    summary_initial, data, tool_name = route_intent(payload.content, db, user, conv.project_id)
+    latency_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+
+    # Pre-build meta payload (so the UI can render the tool label early)
+    meta_payload: dict[str, Any] = {
+        "tool": tool_name,
+        "user_message_id": str(user_msg.id),
+        "latency_ms": latency_ms,
+    }
+    if isinstance(data, dict):
+        if "row_count" in data:
+            meta_payload["row_count"] = data["row_count"]
+        if "range" in data:
+            meta_payload["range"] = data["range"]
+        if "exportable" in data:
+            meta_payload["exportable"] = data["exportable"]
+
+    def event_iter():
+        # 1) meta frame so the UI can show the tool pill immediately
+        yield _sse("meta", meta_payload)
+
+        # Decide whether to stream LLM summary (only when there's something
+        # meaningful to polish and the LLM is configured)
+        can_stream = (
+            tool_name != "fallback"
+            and _llm_ok
+            and llm_provider is not None
+            and llm_provider.is_configured()
+        )
+
+        accumulated: list[str] = []
+        llm_used = False
+
+        try:
+            if can_stream:
+                stream_it, llm_used_inner = _stream_summarize_tool_result(
+                    tool_name, data, payload.content
+                )
+                llm_used = llm_used_inner
+                for kind, text in stream_it:
+                    if not text:
+                        continue
+                    if kind == "content":
+                        accumulated.append(text)
+                        yield _sse("summary_delta", {"text": text})
+                    elif kind == "reasoning":
+                        yield _sse("reasoning_delta", {"text": text})
+            else:
+                # No LLM: emit rule-based fallback as one chunk
+                summary_text = _rule_based_summary(tool_name, data) if tool_name != "fallback" else summary_initial
+                if summary_text:
+                    accumulated.append(summary_text)
+                    yield _sse("summary_delta", {"text": summary_text})
+        except Exception as exc:
+            # Streaming failure → fall back to a single rule-based chunk so
+            # the user still gets a response
+            if not accumulated:
+                fallback = _rule_based_summary(tool_name, data) if tool_name != "fallback" else summary_initial
+                if fallback:
+                    accumulated.append(fallback)
+                    yield _sse("summary_delta", {"text": fallback})
+            yield _sse("error", {"message": f"LLM 流式响应失败: {type(exc).__name__}"})
+
+        # Final accumulated summary text (concatenate all content chunks)
+        final_summary = "".join(accumulated).strip() or summary_initial
+
+        # Persist tool run + assistant message + audit log
+        try:
+            tool_run = AIToolRun(
+                id=uuid.uuid4(),
+                conversation_id=cid,
+                message_id=user_msg.id,
+                tool_name=tool_name,
+                status="ok",
+                latency_ms=latency_ms,
+                row_count=data.get("row_count", len(data.get("items", []))) if isinstance(data, dict) else None,
+                actor_user_id=user.id,
+            )
+            db.add(tool_run)
+
+            assistant_msg = AIMessage(
+                id=uuid.uuid4(),
+                conversation_id=cid,
+                role="assistant",
+                content=final_summary,
+                tool_name=tool_name,
+                tool_args_safe={
+                    "summary": final_summary[:500],
+                    "metric_definitions": {
+                        "出租率": "数量出租率 = 已租空间数 / 可出租空间总数（排除停用）",
+                        "逾期": "due_date < 今天 且 费用状态非 paid/cancelled",
+                        "到期": "合同结束日期在指定天数内，状态非 terminated",
+                    },
+                    "warnings": [] if tool_name != "fallback" else ["未能明确理解意图，请使用具体关键词。"],
+                    "source": f"project:{conv.project_id}",
+                    "streamed": True,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            db.add(assistant_msg)
+            conv.updated_at = datetime.now(timezone.utc)
+
+            try:
+                audit = AuditLog(
+                    id=uuid.uuid4(),
+                    organization_id=conv.organization_id,
+                    project_id=conv.project_id,
+                    actor_user_id=user.id,
+                    action="assistant.stream",
+                    resource_type="conversation",
+                    resource_id=str(cid),
+                    after_summary={
+                        "tool": tool_name,
+                        "latency_ms": latency_ms,
+                        "llm_polished": llm_used,
+                        "streamed": True,
+                    },
+                    ip_address=req.client.host if req and req.client else None,
+                    request_id=getattr(req.state, "request_id", None) if req else None,
+                )
+                db.add(audit)
+            except Exception:
+                # Audit log is best-effort; never fail the user response
+                pass
+
+            db.commit()
+        except Exception:
+            # Persistence failure — surface as event but still emit done
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            yield _sse("error", {"message": "结果持久化失败，但响应已生成。"})
+
+        # 2) Done frame so the frontend can swap the streaming bubble to a
+        # finalised message + show the tool meta footer.
+        yield _sse("done", {
+            "message_id": str(assistant_msg.id) if 'assistant_msg' in locals() else None,
+            "tool": tool_name,
+            "summary": final_summary,
+            "latency_ms": latency_ms,
+            "llm_polished": llm_used,
+            "row_count": (data.get("row_count") if isinstance(data, dict) else None),
+            "metric_definitions": {
+                "出租率": "数量出租率 = 已租空间数 / 可出租空间总数（排除停用）",
+                "逾期": "due_date < 今天 且 费用状态非 paid/cancelled",
+                "到期": "合同结束日期在指定天数内，状态非 terminated",
+            },
+            "warnings": [] if tool_name != "fallback" else ["未能明确理解意图，请使用具体关键词。"],
+        })
+
+    return StreamingResponse(
+        event_iter(),
+        media_type="text/event-stream; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # disable nginx buffering if any reverse proxy
+            "Connection": "keep-alive",
+        },
+    )
+
