@@ -9,7 +9,6 @@ on:
       - "apps/api/alembic/**"
       - ".github/workflows/**"
       - ".gitmodules"
-      - "apps/web/**"
   pull_request:
     branches: [main, master]
     paths:
@@ -51,8 +50,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 同时拉取 web 子模块（README / e2e 提到它，但测试本身不需要它）
-          submodules: recursive
+          # 不拉取子模块：CI 只测试 apps/api，apps/web 子模块会触发
+          # GitHub Actions GITHUB_TOKEN 跨私有仓库访问限制，反而拖慢 CI
+          submodules: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
