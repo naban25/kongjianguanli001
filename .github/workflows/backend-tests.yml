@@ -3,18 +3,8 @@ name: Backend Tests
 on:
   push:
     branches: [main, master]
-    paths:
-      - "apps/api/**"
-      - "alembic.ini"
-      - "apps/api/alembic/**"
-      - ".github/workflows/**"
-      - ".gitmodules"
   pull_request:
     branches: [main, master]
-    paths:
-      - "apps/api/**"
-      - "alembic.ini"
-      - "apps/api/alembic/**"
 
 jobs:
   test:
