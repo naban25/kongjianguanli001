@@ -152,12 +152,21 @@ def admin_user(db_session) -> dict:
 def logged_in_client(client, admin_user) -> TestClient:
     """Log the admin user in via /auth/login and return the TestClient with
     the auth cookie attached.
+
+    Test environment uses HTTP (not HTTPS), so the cookie's ``Secure`` flag
+    is ignored by httpx TestClient. We also capture the JWT from the response
+    body and set it on the client as a default ``Authorization`` header to
+    keep test assertions robust regardless of cookie handling.
     """
     resp = client.post(
         "/api/v1/auth/login",
         json={"username": admin_user["username"], "password": admin_user["password"]},
     )
     assert resp.status_code == 200, resp.text
+    body = resp.json()
+    token = body.get("access_token")
+    if token:
+        client.headers["Authorization"] = f"Bearer {token}"
     return client
 
 
