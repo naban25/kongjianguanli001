@@ -1,0 +1,4 @@
+[submodule "apps/web"]
+	path = apps/web
+	url = https://github.com/naban25/kongjianguanli-web.git
+	branch = main
