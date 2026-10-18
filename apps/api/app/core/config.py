@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 72
     # Cookie settings: use SameSite=None + Secure for cross-origin (Pages ↔ Railway)
-    cookie_samesite: str = "lax"  # "lax" for same-origin, "none" for cross-origin
-    cookie_secure: bool = False  # True in production (HTTPS only)
+    cookie_samesite: str = "none"  # "lax" for same-origin, "none" for cross-origin (Pages↔Railway)
+    cookie_secure: bool = True    # HTTPS-only in production
 
     # --- File storage ---
     storage_backend: str = "local"
