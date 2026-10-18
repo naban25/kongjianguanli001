@@ -269,7 +269,7 @@ def test_import_file_rejects_oversize(client, admin_user, tmp_path):
     from app.core import config as cfg_mod
     mod = importlib.import_module("app.core.config")
     settings = mod.get_settings()
-    original_limit = getattr(settings, "max_import_file_size", None) or 50 * 1024 * 1024
+    getattr(settings, "max_import_file_size", None) or 50 * 1024 * 1024
     try:
         # We cannot easily mutate settings from the outside (singleton), so
         # instead we just verify validate_file() rejects a tiny test cap.

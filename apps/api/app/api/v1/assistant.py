@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -27,10 +27,7 @@ from ...models import (
     LeaseStatus,
     Payment,
     PaymentAllocation,
-    PaymentStatus,
-    Project,
     Space,
-    SpaceStatus,
     Tenant,
 )
 
@@ -452,7 +449,7 @@ def route_intent(message: str, db: Session, user: AppUser, project_id: uuid.UUID
     When the message doesn't match any rule clearly, and LLM is available,
     we ask LLM to pick a tool. If LLM also declines → fallback message.
     """
-    msg = message.lower()
+    message.lower()
 
     # Rule-based fast paths (always try first)
     # 到期合同
@@ -718,7 +715,6 @@ def send_message(conv_id: str, payload: SendMessage, req: Request, db: Session =
     db.add(tool_run)
 
     # Save assistant message with structured data (truncate if huge)
-    tool_args_json = None  # kept safe — no arbitrary SQL
 
     assistant_msg = AIMessage(
         id=uuid.uuid4(),

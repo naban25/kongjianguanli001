@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ...core.auth import CurrentUser
 from ...core.database import get_db
-from ...models import AppUser, AppUserStatus, AuditLog
+from ...models import AppUser, AuditLog
 
 router = APIRouter(prefix="/audit-logs", tags=["audit"])
 

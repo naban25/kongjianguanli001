@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 

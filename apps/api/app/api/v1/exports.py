@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session

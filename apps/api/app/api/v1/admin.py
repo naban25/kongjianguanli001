@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -108,7 +107,7 @@ def create_user(payload: CreateUserRequest, req: Request, db: Session = Depends(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="邮箱已存在。")
 
     # Use admin's org for simplicity
-    org = db.query(Organization).first()
+    db.query(Organization).first()
     new_user = AppUser(
         id=uuid.uuid4(),
         username=payload.username,
@@ -193,7 +192,7 @@ def list_projects(
     active_org_id = None
     if not all_orgs:
         # 仅当非管理员 / 非跨组织查询时执行 active_org 解析
-        from ...core.org_context import active_org_ctx, resolve_active_org
+        from ...core.org_context import active_org_ctx
         # 用 FastAPI request 重新解析：通过依赖注入 CurrentUser 已注入 ContextVar
         active_org_id = active_org_ctx.get()
 

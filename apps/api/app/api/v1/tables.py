@@ -8,7 +8,6 @@ All operations respect project-level scope + role checks.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from decimal import Decimal
@@ -23,9 +22,9 @@ from ...core.auth import CurrentUser, require_project_scope
 from ...core.config import get_settings
 from ...core.database import get_db
 from ...core.org_context import ensure_project_in_active_org
-from ...models import AppUser, AuditLog, ImportRow, ImportSheet, Organization, Project
+from ...models import AppUser, AuditLog, ImportRow, ImportSheet, Project
 from ... import models as M
-from ...services.apitable_sync import APITableError, sync_entity, verify_token
+from ...services.apitable_sync import APITableError, sync_entity
 
 router = APIRouter(prefix="/tables", tags=["tables"])
 logger = logging.getLogger(__name__)
@@ -251,7 +250,6 @@ def get_records(
         sid = uuid.UUID(table_ref.split(":", 1)[1])
         q = db.query(ImportRow).filter(ImportRow.import_sheet_id == sid, ImportRow.project_id == pid)
         if search:
-            from sqlalchemy import cast, String as SAString
             q = q.filter(ImportRow.raw_values.cast(db.bind.dialect.text_type).ilike(f"%{search}%"))
         total = q.count()
         rows = q.order_by(ImportRow.source_row_number.asc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -514,7 +512,7 @@ class RecordCreateRequest(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
 
-def _create_business_row(entity: str, values: dict[str, Any], project_id: uuid.UUID, org_id: uuid.UUID):
+def _create_business_row(db: Session, entity: str, values: dict[str, Any], project_id: uuid.UUID, org_id: uuid.UUID):
     """Build a new ORM instance from the incoming values dict."""
     schema = {c["name"]: c for c in (COLUMN_META.get(entity) or []) if not c.get("virtual")}
     ModelClass = _business_model(entity)
@@ -603,7 +601,7 @@ def create_record(
     if not proj:
         raise HTTPException(status_code=404, detail="项目不存在。")
 
-    row = _create_business_row(entity, body.values, pid, org_id)
+    row = _create_business_row(db, entity, body.values, pid, org_id)
     db.add(row)
     db.flush()  # get row.id for audit log
     db.add(AuditLog(

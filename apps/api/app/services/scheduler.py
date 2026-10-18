@@ -20,18 +20,14 @@
 """
 from __future__ import annotations
 
-import asyncio
 import fcntl
 import logging
 import os
-import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 
 from ..core.config import get_settings
 from ..core.database import SessionLocal
@@ -68,7 +64,7 @@ class _SchedulerCoordinator:
             self._fd.flush()
             self._acquired = True
             return True
-        except (BlockingIOError, IOError, OSError) as e:
+        except OSError as e:
             logger.info("[scheduler] 锁已被其他 worker 持有，跳过启动本 worker: %s", e)
             if self._fd:
                 try:

@@ -280,7 +280,7 @@ def infer_field_type(header: str, sample_values: list[Any]) -> str:
 # Standard field keywords → target (entity, field)
 STANDARD_FIELD_KEYWORDS: list[tuple[set[str], str, str]] = [
     # Spaces
-    ({"空间编号", "房间号", "room", "space_code", "space_code"}, "space", "space_code"),
+    ({"空间编号", "房间号", "room", "space_code"}, "space", "space_code"),
     ({"楼层", "floor"}, "space", "floor"),
     ({"面积", "area", "面积(㎡)", "面积m2"}, "space", "area_sqm"),
     ({"工位", "workstation", "workstation_count"}, "space", "workstation_count"),

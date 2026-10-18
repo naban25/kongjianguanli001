@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,6 @@ from ...models import (
     ImportJob,
     ImportRow,
     ImportSheet,
-    Organization,
     Project,
 )
 from ...services import import_pipeline
@@ -83,6 +82,7 @@ def _serialize_sheet(s: ImportSheet, db: Session) -> dict:
 
 @router.post("", response_model=dict)
 async def upload_file(
+    req: Request,
     project_id: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),

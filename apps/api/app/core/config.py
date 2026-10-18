@@ -1,12 +1,10 @@
 """Centralized settings loaded from environment variables."""
 from __future__ import annotations
 
-import secrets
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[4]  # project root (kongjianguanli001/)

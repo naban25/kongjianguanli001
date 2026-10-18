@@ -13,7 +13,6 @@ from ...core.auth import AppUser, CurrentUser, require_project_scope
 from ...core.database import get_db
 from ...core.org_context import ensure_project_in_active_org
 from ...models import (
-    AuditLog,
     Payment,
     PaymentMethod,
     PaymentStatus,

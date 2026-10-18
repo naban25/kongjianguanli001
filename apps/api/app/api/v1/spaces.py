@@ -4,9 +4,8 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ...core.auth import CurrentUser, require_project_scope

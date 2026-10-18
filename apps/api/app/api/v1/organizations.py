@@ -13,14 +13,11 @@ from sqlalchemy.orm import Session
 from ...core.auth import ActiveContext, ActiveOrg
 from ...core.database import get_db
 from ...models import (
-    AppUser,
     AuditLog,
     Organization,
     OrganizationStatus,
     Project,
-    ProjectStatus,
     UserProjectRole,
-    UserRole,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,7 +88,6 @@ def list_organizations(
     if ctx.user.is_system_admin:
         rows = db.query(Organization).order_by(Organization.created_at.asc()).all()
     else:
-        from sqlalchemy import select
         # 通过 UserProjectRole → Project.organization_id 聚合
         org_id_subq = (
             db.query(Project.organization_id)

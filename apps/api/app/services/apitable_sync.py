@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any, Iterable
 
 import httpx
@@ -96,7 +96,7 @@ def map_fields(col_meta: list[dict], region: str = "intl") -> list[dict]:
     if need_prepend_src:
         fields.append(dict(src_field))
 
-    for idx, col in enumerate(col_meta):
+    for _idx, col in enumerate(col_meta):
         name = col["name"]
         if name in SKIP:
             continue

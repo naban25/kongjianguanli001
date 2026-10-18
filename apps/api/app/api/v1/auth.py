@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -11,7 +10,6 @@ from sqlalchemy.orm import Session
 from ...core.auth import (
     CurrentUser,
     create_access_token,
-    hash_password,
     verify_password,
 )
 from ...core.config import get_settings

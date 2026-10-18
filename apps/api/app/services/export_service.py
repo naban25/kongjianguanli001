@@ -14,7 +14,6 @@ import io
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
 
 from fastapi import HTTPException
 from openpyxl import Workbook
@@ -159,11 +158,9 @@ def create_export_job(
     if fmt == "xlsx":
         content = render_table_to_excel(rows, columns, sheet_name=table_ref)
         ext = "xlsx"
-        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         content = render_table_to_csv(rows, columns)
         ext = "csv"
-        mime = "text/csv"
 
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:

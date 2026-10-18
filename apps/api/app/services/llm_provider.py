@@ -129,18 +129,17 @@ def chat(
                 except LLMError:
                     raise
                 except (KeyError, IndexError, json.JSONDecodeError) as exc:
-                    raise LLMError(f"LLM 返回格式异常") from exc
+                    raise LLMError("LLM 返回格式异常") from exc
 
             if resp.status_code in _RETRYABLE_STATUSES and attempt < 2:
                 time.sleep(2 ** attempt)
                 continue
 
             # Non-retryable
-            detail = ""
             try:
-                detail = resp.json().get("error", {}).get("message", resp.text[:200])
+                resp.json().get("error", {}).get("message", resp.text[:200])
             except Exception:
-                detail = resp.text[:200]
+                resp.text[:200]
             if resp.status_code == 401:
                 raise LLMError("LLM 认证失败 (API Key 无效)")
             if resp.status_code == 404:
@@ -159,9 +158,9 @@ def chat(
             continue
         except httpx.HTTPError as exc:
             last_exc = exc
-            raise LLMError(f"LLM 网络错误") from exc
+            raise LLMError("LLM 网络错误") from exc
 
-    raise LLMError(f"LLM 请求失败 (重试3次后仍不可用)") from last_exc
+    raise LLMError("LLM 请求失败 (重试3次后仍不可用)") from last_exc
 
 
 def chat_stream(

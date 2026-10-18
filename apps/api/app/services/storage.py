@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import hashlib
-import shutil
 import uuid
 from pathlib import Path
-from typing import BinaryIO, Tuple
+from typing import Tuple
 
 from ..core.config import get_settings
 

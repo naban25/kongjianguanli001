@@ -1,0 +1,26 @@
+# Ruff 配置：CI 质量门只卡真正的 bug，不卡风格选择
+#
+# 启用：E (pycodestyle errors), F (pyflakes - 真bug), W (warnings), B (bugbear 真危险)
+# 禁用：UP (pyupgrade - 太激进，Optional[X]→X|None 是风格选择)
+#       SIM (simplify - 太啰嗦)
+#       I001 (import sort - 已用 isort 或手动维护)
+#
+# FastAPI 项目的特殊豁免：
+#   B008 (function-call-in-default-argument) 是 FastAPI Depends() 的标准模式
+
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "B"]
+ignore = [
+    "B008",   # FastAPI Depends() in defaults — 标准用法
+    "B904",   # raise-without-from-inside-except — 改进建议但不影响正确性
+    "E501",   # line too long — 让项目自己控制
+    "E402",   # module level import not at top — 局部 import 是合理选择
+    "E741",   # ambiguous variable name (l, O, I) — 循环变量常见
+]
+unfixable = []
+
+[lint.per-file-ignores]
+"tests/*" = ["F401", "F811"]  # tests 里允许 unused import 和重复 fixture
