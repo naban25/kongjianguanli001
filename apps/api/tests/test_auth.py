@@ -62,6 +62,8 @@ def test_logout_clears_session(logged_in_client):
     assert resp.status_code in (200, 204), resp.text
 
     # Subsequent call to /auth/me should fail because cookie was cleared
+    # and Authorization header set by the fixture is removed.
+    logged_in_client.headers.pop("Authorization", None)
     follow = logged_in_client.get("/api/v1/auth/me")
     assert follow.status_code in (401, 403), follow.text
 
