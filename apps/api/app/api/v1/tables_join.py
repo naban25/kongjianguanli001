@@ -97,17 +97,16 @@ def tenant_overview(
         # 注：联系人是加密存储（contact_phone_encrypted），不在跨表 JOIN 视图返回
         # 如需查询，请使用 assistant 工具带脱敏处理
         items.append({
-            "tenant_id": str(t.id),
-            "tenant_name": t.tenant_name,
-            "tenant_type": t.tenant_type.value if hasattr(t.tenant_type, "value") else t.tenant_type,
-            "industry": t.industry,
-            "contact_name": t.contact_name,
-            "contact_phone": None,
-            "registration_code": t.registration_code,
-            "lease_count": lease_counts.get(t.id, 0),
-            "total_charges": round(float(charge_totals.get(t.id, 0) or 0), 2),
-            "total_paid": round(float(paid_totals.get(t.id, 0) or 0), 2),
-            "outstanding": round(
+            "租户名称": t.tenant_name,
+            "租户类型": t.tenant_type.value if hasattr(t.tenant_type, "value") else t.tenant_type,
+            "行业": t.industry,
+            "联系人": t.contact_name,
+            "联系电话": None,
+            "统一社会信用代码": t.registration_code,
+            "租约数": lease_counts.get(t.id, 0),
+            "应收总额": round(float(charge_totals.get(t.id, 0) or 0), 2),
+            "已收总额": round(float(paid_totals.get(t.id, 0) or 0), 2),
+            "未收余额": round(
                 float(charge_totals.get(t.id, 0) or 0) - float(paid_totals.get(t.id, 0) or 0), 2),
         })
     return {"items": items, "total": total, "page": page, "page_size": page_size}
@@ -169,23 +168,20 @@ def lease_detail(
         total_due = float(charge_by_lease.get(lease.id, 0) or 0)
         total_paid = float(paid_by_lease.get(lease.id, 0) or 0)
         items.append({
-            "lease_id": str(lease.id),
-            "lease_code": lease.lease_code,
-            "start_date": lease.start_date.isoformat() if lease.start_date else None,
-            "end_date": lease.end_date.isoformat() if lease.end_date else None,
-            "status": lease.status.value if hasattr(lease.status, "value") else lease.status,
-            "rent_amount": float(lease.rent_amount) if lease.rent_amount else 0.0,
-            "deposit_amount": float(lease.deposit_amount) if lease.deposit_amount else 0.0,
-            "payment_cycle": lease.payment_cycle.value if hasattr(lease.payment_cycle, "value") else lease.payment_cycle,
-            "tenant_id": str(tenant.id) if tenant else None,
-            "tenant_name": tenant.tenant_name if tenant else None,
-            "space_id": str(space.id) if space else None,
-            "space_code": space.space_code if space else None,
-            "floor": space.floor if space else None,
-            "area_sqm": float(space.area_sqm) if space and space.area_sqm else None,
-            "total_charges": round(total_due, 2),
-            "total_paid": round(total_paid, 2),
-            "outstanding": round(total_due - total_paid, 2),
+            "租约编号": lease.lease_code,
+            "开始日期": lease.start_date.isoformat() if lease.start_date else None,
+            "结束日期": lease.end_date.isoformat() if lease.end_date else None,
+            "状态": lease.status.value if hasattr(lease.status, "value") else lease.status,
+            "租金": float(lease.rent_amount) if lease.rent_amount else 0.0,
+            "押金": float(lease.deposit_amount) if lease.deposit_amount else 0.0,
+            "付款周期": lease.payment_cycle.value if hasattr(lease.payment_cycle, "value") else lease.payment_cycle,
+            "租户": tenant.tenant_name if tenant else None,
+            "空间编号": space.space_code if space else None,
+            "楼层": space.floor if space else None,
+            "面积（㎡）": float(space.area_sqm) if space and space.area_sqm else None,
+            "应收合计": round(total_due, 2),
+            "已收合计": round(total_paid, 2),
+            "未收余额": round(total_due - total_paid, 2),
         })
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
@@ -232,24 +228,21 @@ def space_tenants(
             existing = active_leases.get(l.space_id)
             if existing is None or l.end_date > existing["end_date"]:
                 active_leases[l.space_id] = {
-                    "lease_id": str(l.id),
-                    "lease_code": l.lease_code,
-                    "tenant_id": str(l.tenant_id),
-                    "tenant_name": tenants_map.get(l.tenant_id),
-                    "end_date": l.end_date.isoformat() if l.end_date else None,
+                    "租约编号": l.lease_code,
+                    "租户": tenants_map.get(l.tenant_id),
+                    "租约到期": l.end_date.isoformat() if l.end_date else None,
                 }
 
     items = []
     for s in spaces:
         active = active_leases.get(s.id)
         items.append({
-            "space_id": str(s.id),
-            "space_code": s.space_code,
-            "floor": s.floor,
-            "area_sqm": float(s.area_sqm) if s.area_sqm else None,
-            "workstation_count": s.workstation_count,
-            "status": s.status.value if hasattr(s.status, "value") else s.status,
-            "current_lease": active,
+            "空间编号": s.space_code,
+            "楼层": s.floor,
+            "面积（㎡）": float(s.area_sqm) if s.area_sqm else None,
+            "工位数": s.workstation_count,
+            "状态": s.status.value if hasattr(s.status, "value") else s.status,
+            "当前租约": active,
         })
     return {"items": items, "total": len(items)}
 
@@ -309,18 +302,14 @@ def overdue_view(
     items = []
     for c, t, l, s in rows:
         items.append({
-            "charge_id": str(c.id),
-            "charge_type": c.charge_type.value if hasattr(c.charge_type, "value") else c.charge_type,
-            "amount_due": float(c.amount_due) if c.amount_due else 0.0,
-            "due_date": c.due_date.isoformat() if c.due_date else None,
-            "days_overdue": (today - c.due_date).days if c.due_date else None,
-            "tenant_id": str(t.id) if t else None,
-            "tenant_name": t.tenant_name if t else None,
-            "contact_phone": None,
-            "lease_id": str(l.id) if l else None,
-            "lease_code": l.lease_code if l else None,
-            "space_id": str(s.id) if s else None,
-            "space_code": s.space_code if s else None,
+            "费用类型": c.charge_type.value if hasattr(c.charge_type, "value") else c.charge_type,
+            "金额": float(c.amount_due) if c.amount_due else 0.0,
+            "应付款日": c.due_date.isoformat() if c.due_date else None,
+            "逾期天数": (today - c.due_date).days if c.due_date else None,
+            "租户": t.tenant_name if t else None,
+            "联系电话": None,
+            "租约编号": l.lease_code if l else None,
+            "空间编号": s.space_code if s else None,
         })
     return {
         "items": items,

@@ -226,14 +226,13 @@ def _tool_create_temp_view(
             chg = float(r.total_charges or 0)
             paid = float(paid_by_tenant.get(r.id, 0) or 0)
             items.append({
-                "tenant_id": str(r.id),
-                "tenant_name": r.tenant_name,
-                "lease_count": r.lease_count,
-                "total_charges": round(chg, 2),
-                "total_paid": round(paid, 2),
-                "outstanding": round(chg - paid, 2),
+                "租户名称": r.tenant_name,
+                "租约数": r.lease_count,
+                "应收总额": round(chg, 2),
+                "已收总额": round(paid, 2),
+                "未收余额": round(chg - paid, 2),
             })
-        items.sort(key=lambda x: -x["total_paid"])
+        items.sort(key=lambda x: -x["已收总额"])
         return {
             "view_type": view_type,
             "title": TEMP_VIEWS[view_type]["title"],
@@ -259,10 +258,9 @@ def _tool_create_temp_view(
             .all()
         )
         items = [{
-            "space_id": str(r.id),
-            "space_code": r.space_code,
-            "floor": r.floor,
-            "total_charges": round(float(r.total_charges or 0), 2),
+            "空间编号": r.space_code,
+            "楼层": r.floor,
+            "应收总额": round(float(r.total_charges or 0), 2),
         } for r in rows]
         return {
             "view_type": view_type,
@@ -292,9 +290,9 @@ def _tool_create_temp_view(
             .all()
         )
         items = [{
-            "year_month": f"{int(r.year):04d}-{int(r.month):02d}",
-            "amount": round(float(r.amount or 0), 2),
-            "payment_count": r.count,
+            "月份": f"{int(r.year):04d}-{int(r.month):02d}",
+            "金额": round(float(r.amount or 0), 2),
+            "收款笔数": r.count,
         } for r in rows]
         return {
             "view_type": view_type,
@@ -343,7 +341,7 @@ def _tool_create_temp_view(
                 bucket_dict["90+天"]["count"] += 1
                 bucket_dict["90+天"]["amount"] += amount
         items = [
-            {"bucket": k, "count": v["count"], "amount": round(v["amount"], 2)}
+            {"账龄": k, "笔数": v["count"], "金额": round(v["amount"], 2)}
             for k, v in bucket_dict.items()
         ]
         return {
@@ -375,7 +373,7 @@ def _tool_create_temp_view(
             entry["lease_count"] += 1
             entry["total_rent"] += float(l.rent_amount or 0)
         items = [
-            {"month": k, "lease_count": v["lease_count"], "total_rent": round(v["total_rent"], 2)}
+            {"月份": k, "租约数": v["lease_count"], "租金合计": round(v["total_rent"], 2)}
             for k, v in sorted(monthly.items())
         ]
         return {
