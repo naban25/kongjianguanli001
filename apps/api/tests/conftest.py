@@ -106,7 +106,12 @@ def client(db_session) -> Iterator[TestClient]:
 
 @pytest.fixture()
 def admin_user(db_session) -> dict:
-    """Create an active admin user directly via SQL (idempotent)."""
+    """Create an active admin user directly via SQL (idempotent).
+
+    Also seeds a default active Organization so that resolve_active_org()
+    can find at least one active org for the admin — required by
+    /admin/organizations/* and other active-org-scoped endpoints.
+    """
     from app.core.auth import hash_password
 
     user_id = uuid.uuid4()
@@ -120,6 +125,20 @@ def admin_user(db_session) -> dict:
         {"id": str(user_id), "u": "test_admin", "e": "test_admin@example.com",
          "p": pwd, "dn": "Test Admin"},
     )
+    # 默认组织：admin 必有一个可见 org，避免 CI 全新 DB 触发 403
+    # organizations 表对 name 没有 unique 约束，用 SELECT first 防重复
+    existing = db_session.execute(
+        text("SELECT id FROM organizations WHERE name = :n LIMIT 1"),
+        {"n": "Test Default Org"},
+    ).first()
+    if existing is None:
+        db_session.execute(
+            text(
+                "INSERT INTO organizations (id, name, status, created_at, updated_at) "
+                "VALUES (:oid, :n, 'active', NOW(), NOW())"
+            ),
+            {"oid": str(uuid.uuid4()), "n": "Test Default Org"},
+        )
     db_session.flush()
     return {
         "id": user_id,

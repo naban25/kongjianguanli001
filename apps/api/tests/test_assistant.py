@@ -42,8 +42,8 @@ def conversation(logged_in_client, db_session):
         proj = Project(
             id=uuid.uuid4(),
             organization_id=org.id,
-            project_code="TEST-PRJ",
-            project_name="Test Project",
+            code="TEST-PRJ",
+            name="Test Project",
             status="active",
         )
         db_session.add(proj)
