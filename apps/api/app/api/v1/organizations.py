@@ -15,7 +15,6 @@ from ...core.auth import ActiveContext, ActiveOrg
 from ...core.database import get_db
 from ...models import (
     AppUser,
-    AppUserStatus,
     AuditLog,
     Organization,
     OrganizationMembership,
