@@ -2,6 +2,28 @@
 
 一套**已生产部署**的写字楼空间租赁运营系统。以 Excel/CSV 导入为入口，以多维表格为工作界面，以受控 AI Agent 为自然语言查询入口，以 **APITable / 维格表** 云版为协作视图层。
 
+## 文档导航
+
+| 文档 | 内容 |
+|---|---|
+| [README.md](./README.md) | 本文档 — 项目总览与快速开始 |
+| [DEPLOYMENT.md](./DEPLOYMENT.md) | **部署链路**：Cloudflare Pages / Railway / 子模块同步流程 / 排障 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统架构、模块划分、数据模型 |
+| [TESTING.md](./TESTING.md) | 测试策略、运行命令、CI 矩阵 |
+
+## 仓库结构
+
+主仓是 git submodules wrapper，**真正部署的是两个子仓**：
+
+```
+kongjianguanli001/           ← 主仓（文档 + wrapper）
+├── apps/web/                ← 子仓 naban25/kongjianguanli-web → Cloudflare Pages
+├── apps/api/                ← 子仓 naban25/kongjianguanli-api → Railway
+└── scripts/                 ← 一键推送 + 配置检查
+```
+
+**推送流程**：参见 [DEPLOYMENT.md § 3](./DEPLOYMENT.md#3-一键推送推荐) 与 `scripts/push-all.sh`。
+
 > **规格版本：V2.0 · 生产部署已连通 · 56 条真实业务数据**
 >
 > | 环境 | 地址 | 说明 |
