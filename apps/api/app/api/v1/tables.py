@@ -327,18 +327,24 @@ def _business_records(db: Session, pid: uuid.UUID, entity: str, page: int, page_
         if field not in col_names:
             continue
         col = getattr(ModelClass, field)
+        # 数值列（Integer/Numeric/Float 等）需要把字符串值转为数字后再比较，
+        # 否则 PG 会拒绝 integer_column == '5' 这类跨类型比较（500 INTERNAL_ERROR）。
+        from sqlalchemy import Numeric, Integer, Float, SmallInteger, BigInteger, Boolean
+        num_types = (Numeric, Integer, Float, SmallInteger, BigInteger)
+        is_numeric = isinstance(col.type, num_types)
+        coerced = _safe_num(value) if is_numeric else value
         if op == "eq":
-            q = q.filter(col == value)
+            q = q.filter(col == coerced)
         elif op == "ne":
-            q = q.filter(col != value)
+            q = q.filter(col != coerced)
         elif op == "gt":
-            q = q.filter(col > _safe_num(value))
+            q = q.filter(col > coerced)
         elif op == "gte":
-            q = q.filter(col >= _safe_num(value))
+            q = q.filter(col >= coerced)
         elif op == "lt":
-            q = q.filter(col < _safe_num(value))
+            q = q.filter(col < coerced)
         elif op == "lte":
-            q = q.filter(col <= _safe_num(value))
+            q = q.filter(col <= coerced)
         elif op == "like":
             q = q.filter(col.ilike(f"%{value}%"))
         elif op == "in":
