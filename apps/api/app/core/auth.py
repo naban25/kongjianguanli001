@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..core.config import get_settings
 from ..core.database import get_db
-from ..models import AppUser, AppUserStatus
+from ..models import AppUser, AppUserStatus, OrgMemberRole
 
 from .org_context import resolve_active_org  # noqa: E402
 
@@ -135,10 +135,25 @@ def require_project_scope(project_id: str, user: AppUser, db: Session) -> bool:
 
 @dataclass
 class ActiveContext:
-    """组合：当前登录用户 + 当前所选 organization_id + 可见 orgs。"""
+    """组合：当前登录用户 + 当前所选 organization_id + 可见 orgs + 各 org 下的角色。"""
     user: AppUser
     active_org_id: uuid.UUID
     accessible_org_ids: set[uuid.UUID]
+    # 用户在每个可见 org 下的角色。系统管理员为空 dict（视作全权）。
+    # active_org_role 是该用户在当前 active_org_id 下的角色；admin 视角下为 None（视为全权）。
+    org_roles: dict[uuid.UUID, OrgMemberRole]
+    active_org_role: Optional[OrgMemberRole]
+
+    @property
+    def is_system_admin(self) -> bool:
+        return self.user.is_system_admin
+
+    @property
+    def is_org_admin(self) -> bool:
+        """是否能在当前激活组织执行管理操作（系统管理员 或 org_admin 角色）。"""
+        if self.user.is_system_admin:
+            return True
+        return self.active_org_role == OrgMemberRole.org_admin
 
 
 class ActiveOrg:
@@ -163,8 +178,12 @@ class ActiveOrg:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已被禁用。")
         active_org_id = resolve_active_org(request, user, db)
         accessible = set(getattr(request.state, "user_org_access", set()) or set())
+        org_roles: dict[uuid.UUID, OrgMemberRole] = getattr(request.state, "user_org_roles", {}) or {}
+        active_role = org_roles.get(active_org_id)
         return ActiveContext(
             user=user,
             active_org_id=active_org_id,
             accessible_org_ids=accessible,
+            org_roles=org_roles,
+            active_org_role=active_role,
         )

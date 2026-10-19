@@ -160,6 +160,13 @@ class UserRole(StrEnum):
     operator = "operator"
 
 
+# 组织维度角色（系统管理员分配；同一用户在不同组织可有不同角色）
+class OrgMemberRole(StrEnum):
+    org_admin = "org_admin"   # 组织管理员：管理本组织下项目与成员
+    operator = "operator"     # 运营人员：读写本组织数据，无组织管理权限
+    viewer = "viewer"         # 只读：仅查看
+
+
 # Import
 class ImportJobStatus(StrEnum):
     uploaded = "uploaded"
@@ -434,6 +441,34 @@ class UserProjectRole(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "project_id", name="uq_user_project_role"),
+    )
+
+
+class OrganizationMembership(Base):
+    """用户-组织-角色关联。
+
+    与 UserProjectRole 不同：membership 是组织维度的角色，授予用户访问某个 Organization 的权限。
+    - 系统管理员（is_system_admin=True）默认拥有所有 Organization 访问权。
+    - 普通用户需通过 membership 才能进入组织；进入后再按 UserProjectRole 控制具体项目级权限。
+    - role 决定用户在该组织下的能力：
+        * org_admin：可管理本组织下项目 + 成员配置
+        * operator：读写本组织项目数据，无组织管理权限
+        * viewer：只读
+    """
+    __tablename__ = "organization_memberships"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=False, index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False, index=True)
+    role: Mapped[OrgMemberRole] = mapped_column(Enum(OrgMemberRole), nullable=False, default=OrgMemberRole.operator)
+    created_at: Mapped[datetime] = _ts_created()
+    updated_at: Mapped[datetime] = _ts_updated()
+
+    user = relationship("AppUser")
+    organization = relationship("Organization")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "organization_id", name="uq_org_membership"),
     )
 
 

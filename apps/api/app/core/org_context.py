@@ -9,13 +9,15 @@
 任何层级若与该用户无可见性，都会被忽略并继续往下找。
 
 可见性规则：
-- 系统管理员可访问任意 Organization
-- 非系统管理员仅可访问其在 UserProjectRole 中存在项目的 Organization 集合
+- 系统管理员可访问任意 Organization（无需 membership）
+- 非系统管理员仅可访问其在 ``OrganizationMembership`` 中存在记录的组织集合
+  （回填后等价于通过 UserProjectRole 派生的集合，但 membership 是组织权限的源头）
 
 解析后写入：
 - `request.state.active_org_id` (uuid.UUID)
 - `request.state.user_org_access` (set[uuid.UUID])
-- ContextVar `active_org_ctx`（用于业务函数无需传递 request 参数）
+- `request.state.user_org_roles` (dict[uuid.UUID, OrgMemberRole])   # 用户在各 org 下的角色
+- ContextVar `active_org_ctx` / `user_org_access_ctx` / `user_org_roles_ctx`
 """
 from __future__ import annotations
 
@@ -27,7 +29,14 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from ..models import AppUser, Organization, OrganizationStatus, Project, UserProjectRole
+from ..models import (
+    AppUser,
+    Organization,
+    OrganizationMembership,
+    OrganizationStatus,
+    OrgMemberRole,
+    Project,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +47,8 @@ COOKIE_ORG_ID = "active_org_id"
 # 在 FastAPI 端点无 Request 参数时使用这里
 active_org_ctx: ContextVar[Optional[uuid.UUID]] = ContextVar("active_org_ctx", default=None)
 user_org_access_ctx: ContextVar[Optional[set]] = ContextVar("user_org_access_ctx", default=None)
+# 用户在每个可见 org 下的 OrgMemberRole 映射（admin 视角下为空 dict：默认 admin）
+user_org_roles_ctx: ContextVar[Optional[dict]] = ContextVar("user_org_roles_ctx", default=None)
 
 
 def _uuid_or_none(value: Optional[str]) -> Optional[uuid.UUID]:
@@ -55,13 +66,31 @@ def _list_user_org_ids(db: Session, user: AppUser) -> set[uuid.UUID]:
         rows = db.query(Organization.id).filter(Organization.status == OrganizationStatus.active).all()
         return {r[0] for r in rows}
     rows = (
-        db.query(Project.organization_id)
-        .join(UserProjectRole, UserProjectRole.project_id == Project.id)
-        .filter(UserProjectRole.user_id == user.id)
+        db.query(OrganizationMembership.organization_id)
+        .filter(OrganizationMembership.user_id == user.id)
         .distinct()
         .all()
     )
     return {r[0] for r in rows}
+
+
+def _list_user_org_roles(db: Session, user: AppUser) -> dict[uuid.UUID, OrgMemberRole]:
+    """返回用户在每个可见 org 下的角色映射。
+
+    - 系统管理员返回空 dict（被视作全权）
+    - 普通用户返回 {(org_id, role)}
+    """
+    if user.is_system_admin:
+        return {}
+    rows = (
+        db.query(
+            OrganizationMembership.organization_id,
+            OrganizationMembership.role,
+        )
+        .filter(OrganizationMembership.user_id == user.id)
+        .all()
+    )
+    return {oid: role for oid, role in rows}
 
 
 def resolve_active_org(
@@ -72,7 +101,7 @@ def resolve_active_org(
     """解析并返回当前请求所选的 organization_id。
 
     - 验证所选 org 用户确实有访问权
-    - 写入 `request.state.active_org_id` 与 `request.state.user_org_access`
+    - 写入 `request.state.active_org_id` / `user_org_access` / `user_org_roles`
     - 若找不到任何可用 org 抛 403
     """
     user_org_ids = _list_user_org_ids(db, user)
@@ -81,6 +110,7 @@ def resolve_active_org(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="当前用户未关联任何组织或项目，请联系管理员分配权限。",
         )
+    user_org_roles = _list_user_org_roles(db, user)
 
     candidate = _uuid_or_none(request.headers.get(HEADER_ORG_ID)) or _uuid_or_none(
         request.cookies.get(COOKIE_ORG_ID)
@@ -125,9 +155,11 @@ def resolve_active_org(
 
     request.state.active_org_id = chosen
     request.state.user_org_access = user_org_ids
+    request.state.user_org_roles = user_org_roles
     # 同步写入 ContextVar，让业务函数无需传递 request 参数也能读取
     active_org_ctx.set(chosen)
     user_org_access_ctx.set(user_org_ids)
+    user_org_roles_ctx.set(user_org_roles)
     return chosen
 
 
