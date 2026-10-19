@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     apitable_base_url: str = "https://aitable.ai"  # 国内版用 https://aitable.ai，国际版用 https://apitable.com
     apitable_sync_interval_minutes: int = 0  # 0 = 手动触发，>0 = 定时（暂未启用）
 
+    # --- 业务通知推送（policy/notifications）---
+    # 调度任务或关键业务事件完成后，对外通知目标。空 = 关闭通知。
+    # notify_lark_webhook: 飞书自定义机器人 webhook（推荐）
+    # notify_slack_webhook: Slack incoming webhook
+    # notify_email_to: 收件人邮箱列表（逗号分隔）
+    # notify_smtp_host/port/user/pass/from: SMTP 发信配置
+    notify_lark_webhook: str = ""
+    notify_slack_webhook: str = ""
+    notify_email_to: str = ""
+    notify_smtp_host: str = ""
+    notify_smtp_port: int = 587
+    notify_smtp_user: str = ""
+    notify_smtp_password: str = ""
+    notify_smtp_from: str = ""
+
     # --- Logging ---
     log_level: str = "INFO"
 
@@ -87,6 +102,15 @@ class Settings(BaseSettings):
     @property
     def llm_configured(self) -> bool:
         return bool(self.llm_provider and self.llm_model and self.llm_api_key)
+
+    @property
+    def notify_configured(self) -> bool:
+        """是否配置了任意一种业务通知通道。"""
+        return bool(
+            self.notify_lark_webhook
+            or self.notify_slack_webhook
+            or (self.notify_email_to and self.notify_smtp_host)
+        )
 
     def db_connect_args(self) -> dict[str, Any]:
         """Connection args passed to SQLAlchemy engine.

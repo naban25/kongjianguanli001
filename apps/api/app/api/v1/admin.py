@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ...core.auth import CurrentUser, hash_password
+from ...core.config import get_settings
 from ...core.database import get_db
 from ...models import (
     AppUser,
@@ -298,3 +299,50 @@ def assign_project_roles(
     _audit(db, req, actor.id, "assign_project_roles", "app_user", user_id)
     db.commit()
     return {"ok": True}
+
+
+# ---------- 业务通知推送 (admin/notify) ----------
+
+
+class NotifyTestRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=2000)
+    level: str = Field(default="info", pattern="^(info|warning|error)$")
+
+
+@router.get("/notify/status")
+def notify_status_endpoint(user: AppUser = Depends(CurrentUser())):
+    """查看当前通知配置状态（哪些通道已启用）。仅暴露布尔值，避免泄露 webhook URL。"""
+    _enforce_system_admin(user)
+    settings = get_settings()
+    return {
+        "lark": bool(settings.notify_lark_webhook),
+        "slack": bool(settings.notify_slack_webhook),
+        "email": bool(settings.notify_email_to and settings.notify_smtp_host),
+        "configured": settings.notify_configured,
+    }
+
+
+@router.post("/notify/test")
+async def notify_test_endpoint(
+    payload: NotifyTestRequest,
+    req: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(CurrentUser()),
+):
+    """手动触发一次通知推送，用于验证 dashboard webhook 配置正确。"""
+    _enforce_system_admin(user)
+    from ...services.notify import notify_event
+    result = await notify_event(
+        title=payload.title,
+        summary=payload.summary,
+        level=payload.level,
+    )
+    _audit(db, req, user.id, "test_notify", "notification", None)
+    db.commit()
+    if result["sent"] == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="未配置任何通知通道（notify_lark_webhook / notify_slack_webhook / SMTP），请到 Railway Dashboard 设置环境变量。",
+        )
+    return result

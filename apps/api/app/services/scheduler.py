@@ -153,6 +153,24 @@ async def expire_overdue_leases() -> dict[str, Any]:
     finished_at = datetime.now(timezone.utc)
     logger.info("[scheduler] expire_overdue_leases 标记 %d 条租约 → expired (date=%s)",
                 affected, today.isoformat())
+
+    # 业务推送：标记了过期租约后对外通知（仅在确有变更时发送，避免噪音）
+    if affected > 0:
+        try:
+            from .notify import notify_event
+            await notify_event(
+                title=f"过期租约自动标记 {affected} 条",
+                summary=(
+                    f"日期: {today.isoformat()}\n"
+                    f"共 {affected} 条租约因 end_date < today 且状态仍 active/pending，\n"
+                    f"已自动置为 expired。详情请查看审计日志 (scheduler_expire_leases)。"
+                ),
+                level="warning",
+            )
+        except Exception as e:
+            # 通知失败不影响主流程
+            logger.warning("[scheduler] notify_event failed (expire_overdue_leases): %s", e)
+
     return {
         "ok": True,
         "job_id": "expire_overdue_leases",
