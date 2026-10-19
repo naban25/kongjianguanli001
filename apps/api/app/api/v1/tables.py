@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, asc, desc
+from sqlalchemy import or_, asc, desc, Numeric, Integer, Float, SmallInteger, BigInteger, Date, DateTime as DateTimeType
 from sqlalchemy.orm import Session
 
 from ...core.auth import CurrentUser, require_project_scope
@@ -263,10 +263,15 @@ def get_records(
 
 
 def _parse_filters(filters_str: str | None) -> list[tuple[str, str, str]]:
-    """Parse 'field:op:value,field2:op:val2' into [(field, op, value), ...]."""
+    """Parse 'field:op:value,field2:op:val2' into [(field, op, value), ...].
+
+    支持的操作符：
+      eq / ne / gt / gte / lt / lte / like / in
+      between — value 形式 'min|max'，对数字与日期列做闭区间 [min, max]
+    """
     if not filters_str:
         return []
-    ops = {"eq", "ne", "gt", "gte", "lt", "lte", "like", "in"}
+    ops = {"eq", "ne", "gt", "gte", "lt", "lte", "like", "in", "between"}
     parsed: list[tuple[str, str, str]] = []
     for part in filters_str.split(","):
         parts = part.strip().split(":", 2)
@@ -274,6 +279,8 @@ def _parse_filters(filters_str: str | None) -> list[tuple[str, str, str]]:
             continue
         field, op, value = parts[0].strip(), parts[1].strip(), parts[2].strip()
         if op not in ops:
+            continue
+        if op == "between" and "|" not in value:
             continue
         parsed.append((field, op, value))
     return parsed
@@ -336,6 +343,22 @@ def _business_records(db: Session, pid: uuid.UUID, entity: str, page: int, page_
             q = q.filter(col.ilike(f"%{value}%"))
         elif op == "in":
             q = q.filter(col.in_([v.strip() for v in value.split("|")]))
+        elif op == "between":
+            a, b = value.split("|", 1)
+            # 不同类型列需要显式转换值，否则 PG 会拒绝（date >= VARCHAR 等）
+            num_types = (Numeric, Integer, Float, SmallInteger, BigInteger)
+            if isinstance(col.type, num_types):
+                a_v, b_v = _safe_num(a), _safe_num(b)
+            elif isinstance(col.type, Date):
+                from datetime import date as _date
+                a_v, b_v = _date.fromisoformat(a), _date.fromisoformat(b)
+            elif isinstance(col.type, DateTimeType):
+                from datetime import datetime as _dt
+                a_v = _dt.fromisoformat(a) if "T" in a or " " in a else _dt.fromisoformat(a + "T00:00:00")
+                b_v = _dt.fromisoformat(b) if "T" in b or " " in b else _dt.fromisoformat(b + "T23:59:59")
+            else:
+                a_v, b_v = a, b
+            q = q.filter(col >= a_v, col <= b_v)
 
     total = q.count()
 
@@ -667,6 +690,21 @@ def get_aggregate(
             q = q.filter(col.ilike(f"%{value}%"))
         elif op == "in":
             q = q.filter(col.in_([v.strip() for v in value.split("|")]))
+        elif op == "between":
+            a, b = value.split("|", 1)
+            num_types = (Numeric, Integer, Float, SmallInteger, BigInteger)
+            if isinstance(col.type, num_types):
+                a_v, b_v = _safe_num(a), _safe_num(b)
+            elif isinstance(col.type, Date):
+                from datetime import date as _date
+                a_v, b_v = _date.fromisoformat(a), _date.fromisoformat(b)
+            elif isinstance(col.type, DateTimeType):
+                from datetime import datetime as _dt
+                a_v = _dt.fromisoformat(a) if "T" in a or " " in a else _dt.fromisoformat(a + "T00:00:00")
+                b_v = _dt.fromisoformat(b) if "T" in b or " " in b else _dt.fromisoformat(b + "T23:59:59")
+            else:
+                a_v, b_v = a, b
+            q = q.filter(col >= a_v, col <= b_v)
 
     # Find numeric/currency columns from COLUMN_META
     numeric_cols = [c["name"] for c in (COLUMN_META.get(entity) or [])
