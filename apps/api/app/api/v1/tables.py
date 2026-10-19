@@ -329,7 +329,7 @@ def _business_records(db: Session, pid: uuid.UUID, entity: str, page: int, page_
         col = getattr(ModelClass, field)
         # 数值列（Integer/Numeric/Float 等）需要把字符串值转为数字后再比较，
         # 否则 PG 会拒绝 integer_column == '5' 这类跨类型比较（500 INTERNAL_ERROR）。
-        from sqlalchemy import Numeric, Integer, Float, SmallInteger, BigInteger, Boolean
+        from sqlalchemy import Numeric, Integer, Float, SmallInteger, BigInteger
         num_types = (Numeric, Integer, Float, SmallInteger, BigInteger)
         is_numeric = isinstance(col.type, num_types)
         coerced = _safe_num(value) if is_numeric else value
