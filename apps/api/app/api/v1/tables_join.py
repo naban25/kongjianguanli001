@@ -31,6 +31,36 @@ from ...models import (
     Tenant,
 )
 
+
+# --- 状态枚举中文化 ---------------------------------------------------
+
+_LEASE_STATUS_CN = {
+    "active": "生效中",
+    "expired": "已到期",
+    "terminated": "已解约",
+}
+
+_SPACE_STATUS_CN = {
+    "available": "空闲",
+    "occupied": "已租",
+    "maintenance": "维护中",
+    "reserved": "已预订",
+}
+
+
+def _cn_lease_status(value: Any) -> str:
+    if value is None:
+        return ""
+    s = value.value if hasattr(value, "value") else str(value)
+    return _LEASE_STATUS_CN.get(s, s)
+
+
+def _cn_space_status(value: Any) -> str:
+    if value is None:
+        return ""
+    s = value.value if hasattr(value, "value") else str(value)
+    return _SPACE_STATUS_CN.get(s, s)
+
 router = APIRouter(prefix="/tables/join", tags=["tables-join"])
 
 
@@ -171,7 +201,7 @@ def lease_detail(
             "租约编号": lease.lease_code,
             "开始日期": lease.start_date.isoformat() if lease.start_date else None,
             "结束日期": lease.end_date.isoformat() if lease.end_date else None,
-            "状态": lease.status.value if hasattr(lease.status, "value") else lease.status,
+            "状态": _cn_lease_status(lease.status),
             "租金": float(lease.rent_amount) if lease.rent_amount else 0.0,
             "押金": float(lease.deposit_amount) if lease.deposit_amount else 0.0,
             "付款周期": lease.payment_cycle.value if hasattr(lease.payment_cycle, "value") else lease.payment_cycle,
@@ -241,7 +271,7 @@ def space_tenants(
             "楼层": s.floor,
             "面积（㎡）": float(s.area_sqm) if s.area_sqm else None,
             "工位数": s.workstation_count,
-            "状态": s.status.value if hasattr(s.status, "value") else s.status,
+            "状态": _cn_space_status(s.status),
             "当前租约": active,
         })
     return {"items": items, "total": len(items)}
