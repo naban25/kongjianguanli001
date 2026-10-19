@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # scripts/push-all.sh
 # ----------------------------------------------------------------
-# 在主仓 kongjianguanli001 根目录运行此脚本，自动按顺序推送三个仓
+# 在主仓 kongjianguanli001 根目录运行此脚本，自动按顺序推送两个仓
 # 并在主仓 bump 子模块指针。
+#
+# 架构说明：
+#   - apps/api 是主仓一部分（不在 .gitmodules 里），后端 CI 走主仓 workflow
+#   - apps/web 是独立子仓（naban25/kongjianguanli-web），接 Cloudflare Pages
+#   - Railway 后端不走 git push 自动部署，需手动 `railway up`
 #
 # 用法：
 #   scripts/push-all.sh "feat(tables): xxx"
 #   scripts/push-all.sh                    # 复用根目录未提交变更
 #
 # 行为：
-#   1. 检查每个仓是否干净（无未提交变更）
-#   2. 推 apps/api 子仓（如有变更），等 CI 全绿
-#   3. 推 apps/web 子仓（如有变更），等 CI 全绿
-#   4. 主仓 bump 子模块 pointer 并 push
+#   1. 主仓推送（含 apps/api 代码变更），等 CI 全绿
+#   2. 推 apps/web 子仓（如有变更），等 CI 全绿
+#   3. 主仓 bump 子模块 pointer 并 push（如有需要）
 # ----------------------------------------------------------------
 
 set -euo pipefail
@@ -80,6 +84,7 @@ push_repo() {
 wait_for_ci() {
   local repo=$1
   local branch=${2:-main}
+  local head_sha=${3:-$(cd "$ROOT_DIR" && git rev-parse HEAD)}
   step "$repo: 等待 GitHub Actions CI 全绿（最多 5 分钟）..."
 
   local max_wait=300
@@ -88,7 +93,7 @@ wait_for_ci() {
 
   while (( elapsed < max_wait )); do
     local status
-    status=$(gh api "repos/$repo/commits/$(git rev-parse HEAD)/check-runs" \
+    status=$(gh api "repos/$repo/commits/$head_sha/check-runs" \
       --jq '[.check_runs[] | select(.conclusion != null) | .conclusion] | if length > 0 then (if any(. == "failure" or . == "cancelled") then "failure" elif all(. == "success") then "success" else "pending" end) else "pending" end' \
       2>/dev/null || echo "pending")
 
@@ -108,41 +113,37 @@ wait_for_ci() {
 # ---------- 0. 检查 gh CLI ----------
 command -v gh >/dev/null 2>&1 || fail "需要安装 gh CLI（用于等 CI）：brew install gh"
 
-# ---------- 1. 推送 apps/api ----------
-step "[1/3] 处理 apps/api 子仓"
-check_clean "apps/api" "apps/api"
-commit_if_dirty "apps/api" "apps/api" "$MSG"
+# ---------- 1. 推送主仓（含 apps/api 代码） ----------
+step "[1/2] 推送主仓（含 apps/api 后端代码）"
+check_clean "." "主仓"
 
-api_sha=$(cd apps/api && git rev-parse HEAD)
-api_remote_sha=$(cd apps/api && git rev-parse origin/main 2>/dev/null || echo "")
-if [[ "$api_sha" != "$api_remote_sha" ]]; then
-  push_repo "apps/api" "apps/api"
-  wait_for_ci "naban25/kongjianguanli-api"
+main_sha=$(git rev-parse HEAD)
+main_remote_sha=$(git rev-parse origin/main 2>/dev/null || echo "")
+if [[ "$main_sha" != "$main_remote_sha" ]]; then
+  push_repo "." "主仓"
+  wait_for_ci "naban25/kongjianguanli001" "main" "$main_sha"
 else
-  ok "apps/api: 远端已是最新，跳过 push 与 CI 等待"
+  ok "主仓: 远端已是最新，跳过 push 与 CI 等待"
 fi
 
-# ---------- 2. 推送 apps/web ----------
-step "[2/3] 处理 apps/web 子仓"
-check_clean "apps/web" "apps/web"
+# ---------- 2. 推送 apps/web 子仓 ----------
+step "[2/2] 处理 apps/web 子仓"
 commit_if_dirty "apps/web" "apps/web" "$MSG"
 
 web_sha=$(cd apps/web && git rev-parse HEAD)
 web_remote_sha=$(cd apps/web && git rev-parse origin/main 2>/dev/null || echo "")
 if [[ "$web_sha" != "$web_remote_sha" ]]; then
   push_repo "apps/web" "apps/web"
-  wait_for_ci "naban25/kongjianguanli-web"
+  wait_for_ci "naban25/kongjianguanli-web" "main" "$web_sha"
 else
   ok "apps/web: 远端已是最新，跳过 push 与 CI 等待"
 fi
 
-# ---------- 3. bump 主仓 pointer ----------
-step "[3/3] 主仓 bump 子模块指针"
-check_clean "." "主仓"
-
+# ---------- 3. bump 主仓 pointer（如有需要）----------
 if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
-  git add apps/api apps/web
-  git commit -m "chore(submodule): bump 子模块指针
+  step "[3/3] 主仓 bump 子模块指针"
+  git add apps/web
+  git commit -m "chore(submodule): bump apps/web
 
 $MSG"
   git push origin main
@@ -154,6 +155,8 @@ fi
 
 echo
 ok "✅ 全部推送完成"
-echo "  → apps/api:    $(cd apps/api && git rev-parse --short HEAD)"
-echo "  → apps/web:    $(cd apps/web && git rev-parse --short HEAD)"
-echo "  → 主仓:        $(git rev-parse --short HEAD)"
+echo "  → 主仓（含 apps/api）: $(git rev-parse --short HEAD)"
+echo "  → apps/web 子仓:       $(cd apps/web && git rev-parse --short HEAD)"
+echo
+echo "ℹ️  Railway 后端不走 git push 自动部署"
+echo "   如需重新部署：railway up --service 01985e63-3913-45fb-b216-5c5e3f6071ad --detach"
